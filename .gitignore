@@ -1,1 +1,4 @@
 [dD]ata_*/
+[cC]heckpoints/
+
+*.pth
