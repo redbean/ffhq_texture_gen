@@ -12,9 +12,14 @@
 입력 -> Resnet50 (as Encoder) -> MyDecoder -> 출력
 
 ### 데이터 shape
-input = 3, w, h
-target = 4, 3, w, h (디퓨즈, 라이트 노말라이제이션, 노말의 RGB 파일과 AO, SPEC, 투명도 그레이 스케일을 rgb 각 채널에 분배하여 총 4장의 이미지로 만듬)
+ * input = 3, w, h
+ * target = 4, 3, w, h (디퓨즈, 라이트 노말라이제이션, 노말의 RGB 파일과 AO, SPEC, 투명도 그레이 스케일을 rgb 각 채널에 분배하여 총 4장의 이미지로 만듬)
 
-
-
- 
+|제목|내용|설명|
+|---------------------|-|---|
+|diffuse              |0|RGB|
+|light_normalized     |1|RGB|
+|normal               |2|RGB|
+|Specular             |3|R  |
+|Ambient Occlusion    |3| G |
+|Translucency         |3|  B|
