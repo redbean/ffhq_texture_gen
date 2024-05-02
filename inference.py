@@ -69,11 +69,14 @@ with torch.no_grad():  # 그래디언트 계산을 비활성화하여 메모리 
     output = model(sample_data, timesteps)
     output_tensor = output.squeeze(0)  # 배치 차원 제거
     print(output_tensor.shape)
+
+    num_textures = output_tensor.shape[0]
+    num_images = num_textures // 3
+
     for i, image_tensor in enumerate(tqdm(output_tensor)):
         image_numpy = image_tensor.cpu().numpy()
         image_numpy = np.transpose(image_numpy, (1, 2, 0))  # CHW to HWC
         image_numpy = (image_numpy * 255).astype(np.uint8)  # 스케일링
-
         image_numpy = cv2.cvtColor(image_numpy, cv2.COLOR_RGB2BGR)
+
         cv2.imwrite(f'output_image_{i}.png', image_numpy)
-        
