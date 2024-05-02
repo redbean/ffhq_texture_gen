@@ -3,6 +3,7 @@
 __pycache__/
 
 [rR]uns/
-
+054/
 *.pth
+*.png
 
