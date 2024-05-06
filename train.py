@@ -30,7 +30,7 @@ def preprocess_data(data):
 def data_loader(in_dir:str, tar_dir:str):
     combined_dataset = CombinedDataset(input_dir=in_dir, target_dir=tar_dir, transform=preprocess_data)
     # 데이터셋 인덱스 생성 (일부 데이터만 사용)
-    num_samples = 10  # 사용할 데이터 샘플 수
+    num_samples = 1000  # 사용할 데이터 샘플 수
     indices = list(range(min(num_samples, len(combined_dataset))))
 
     # 학습, 검증, 테스트 인덱스 생성
@@ -40,9 +40,9 @@ def data_loader(in_dir:str, tar_dir:str):
     batch_size = 8
 
     # 데이터 로더 생성
-    train_loader = DataLoader(Subset(combined_dataset, train_indices), batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
-    val_loader = DataLoader(Subset(combined_dataset, val_indices), batch_size=batch_size, shuffle=False,    num_workers=0, pin_memory=True)
-    test_loader = DataLoader(Subset(combined_dataset, test_indices), batch_size=batch_size, shuffle=False,  num_workers=0, pin_memory=True)
+    train_loader = DataLoader(Subset(combined_dataset, train_indices), batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    val_loader = DataLoader(Subset(combined_dataset, val_indices), batch_size=batch_size, shuffle=False,    num_workers=8, pin_memory=True)
+    test_loader = DataLoader(Subset(combined_dataset, test_indices), batch_size=batch_size, shuffle=False,  num_workers=8, pin_memory=True)
     return train_loader, val_loader, test_loader
 
 
