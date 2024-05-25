@@ -29,27 +29,27 @@ def preprocess_data(data):
 def data_loader(in_dir:str, tar_dir:str):
     combined_dataset = CombinedDataset(input_dir=in_dir, target_dir=tar_dir, transform=preprocess_data)
     # 데이터셋 인덱스 생성 (일부 데이터만 사용)
-    num_samples = 1000  # 사용할 데이터 샘플 수
+    num_samples = 2000  # 사용할 데이터 샘플 수
     indices = list(range(min(num_samples, len(combined_dataset))))
 
     # 학습, 검증, 테스트 인덱스 생성
-    train_indices = [i for i in indices if i % 10 < 7]
-    val_indices = [i for i in indices if 7 <= i % 10 < 9]
-    test_indices = [i for i in indices if i % 10 == 9]
+    train_indices = [i for i in indices if i % 10 < 8]
+    val_indices = [i for i in indices if i % 10 == 9]
+    #test_indices = [i for i in indices if i % 10 == 9]
     batch_size = 8
 
     # 데이터 로더 생성
     train_loader = DataLoader(Subset(combined_dataset, train_indices), batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
     val_loader = DataLoader(Subset(combined_dataset, val_indices), batch_size=batch_size, shuffle=False,    num_workers=0, pin_memory=True)
-    test_loader = DataLoader(Subset(combined_dataset, test_indices), batch_size=batch_size, shuffle=False,  num_workers=0, pin_memory=True)
-    return train_loader, val_loader, test_loader
+    #test_loader = DataLoader(Subset(combined_dataset, test_indices), batch_size=batch_size, shuffle=False,  num_workers=0, pin_memory=True)
+    return train_loader, val_loader, None
 
 
 def init_train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    epochs = 501
+    epochs = 1000
     learning_rate = 1e-4
-    writer = SummaryWriter()
+    writer = SummaryWriter('runs')
     vae = VAEStyleModel(img_size=512).to(device)  # 모델을 GPU로 이동
     optimizer = torch.optim.Adam(vae.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
@@ -65,7 +65,8 @@ def vae_loss(recon_x, x, mu, logvar):
 def visualize_latent_space(writer, epoch, latents, labels):
     tsne = TSNE(n_components=2)
     latents_2d = tsne.fit_transform(latents)
-    writer.add_embedding(latents_2d, metadata=labels, global_step=epoch, tag='Latent_Space')
+    metadata = [str(label) for label in labels]
+    writer.add_embedding(torch.tensor(latents_2d), metadata=metadata, global_step=epoch, tag='Latent_Space')
 
 # 체크포인트 저장 디렉토리6
 checkpoint_dir = 'checkpoints'
