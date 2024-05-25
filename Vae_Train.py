@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
 
 import os
 import psutil
@@ -12,13 +10,13 @@ from torch.cuda.amp import GradScaler, autocast
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
+from sklearn.manifold import TSNE
+
 from tqdm import tqdm
 
 
-from ResNetSD import ResNetSD
 from datagenerator import CombinedDataset
-from NewModel import NewModel
-
+from Vae_Model import VAEStyleModel
 
 # 데이터 전처리 함수 정의
 def preprocess_data(data):
@@ -31,7 +29,7 @@ def preprocess_data(data):
 def data_loader(in_dir:str, tar_dir:str):
     combined_dataset = CombinedDataset(input_dir=in_dir, target_dir=tar_dir, transform=preprocess_data)
     # 데이터셋 인덱스 생성 (일부 데이터만 사용)
-    num_samples = 10000  # 사용할 데이터 샘플 수
+    num_samples = 1000  # 사용할 데이터 샘플 수
     indices = list(range(min(num_samples, len(combined_dataset))))
 
     # 학습, 검증, 테스트 인덱스 생성
@@ -47,24 +45,27 @@ def data_loader(in_dir:str, tar_dir:str):
     return train_loader, val_loader, test_loader
 
 
-def print_memory_usage(description):
-    process = psutil.Process(os.getpid())
-    print(f"{description} - Memory Usage: {process.memory_info().rss / 1024 ** 2:.2f} MB")
-
 def init_train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    epochs = 11
+    epochs = 501
     learning_rate = 1e-4
-    # GPU 사용 가능 여부 확인 및 device 설정
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-    # TensorBoard 작성기 초기화
     writer = SummaryWriter()
-    model = NewModel(latent_dim=256, num_layers=2).to('cuda')
+    vae = VAEStyleModel(img_size=512).to(device)  # 모델을 GPU로 이동
+    optimizer = torch.optim.Adam(vae.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
-    return epochs, model, writer, criterion, optimizer, device
 
+    return epochs, vae, writer, criterion, optimizer, device
+
+
+def vae_loss(recon_x, x, mu, logvar):
+    BCE = nn.functional.mse_loss(recon_x, x, reduction='sum')
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return BCE + KLD
+
+def visualize_latent_space(writer, epoch, latents, labels):
+    tsne = TSNE(n_components=2)
+    latents_2d = tsne.fit_transform(latents)
+    writer.add_embedding(latents_2d, metadata=labels, global_step=epoch, tag='Latent_Space')
 
 # 체크포인트 저장 디렉토리6
 checkpoint_dir = 'checkpoints'
@@ -86,45 +87,69 @@ def train():
         print("----------")
         print(f"current epoch is {epoch}")
         print("----------")
+        
+        
+        all_latents = []
+        all_labels = []
+        
         for data in tqdm(train_d):
             optimizer.zero_grad()
-        
             input_images, target_images = data 
             input_images = input_images.to(device)
-            target_images = target_images.to(device)       # 타겟 이미지 (6개 이미지 모두)
+            target_images = target_images.to(device)
             
+            # VAE 모델의 순전파
             generated_images, mu, logvar = model(input_images)
-                                    
+            
             # 각 텍스처 맵별 손실 계산
-            loss = 0
-            for i in range(4):  # 4개의 텍스처 맵
-                loss += criterion(generated_images[:, i], target_images[:, i])
+            recon_loss = 0
+            for i in range(4):
+                recon_loss += criterion(generated_images[:, i], target_images[:, i])
+            recon_loss /= 4
 
-            # 평균 손실 사용
-            loss /= 4
+            # KL 다이버전스 손실 계산
+            kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+            # 최종 손실 계산
+            loss = recon_loss + kl_loss
 
             train_loss += loss.item() * input_images.size(0)
             loss.backward()
             optimizer.step()
             
+            # 잠재 벡터 저장
+            all_latents.append(mu.cpu().detach().numpy())
+            all_labels.append(np.argmax(target_images.cpu().detach().numpy(), axis=1))  # 예시: 원핫 인코딩된 레이블을 인덱스로 변환
+
+        # 잠재 공간 시각화
+        all_latents = np.concatenate(all_latents, axis=0)
+        all_labels = np.concatenate(all_labels, axis=0)
+        visualize_latent_space(writer, epoch, all_latents, all_labels)
+            
         train_loss /= len(train_d.dataset)
         print(f"Epoch [{epoch+1}/{epochs}], Train Loss: {train_loss:.4f}")
-            # TensorBoard에 학습 손실 기록
+        # TensorBoard에 학습 손실 기록
         writer.add_scalar('Train Loss', train_loss, epoch)
+        
         # 검증 루프
         if val_d is not None:
             model.eval()
             val_loss = 0.0
-            
             with torch.no_grad():
                 for images in tqdm(val_d):
                     input_images, target_images = images
                     input_images = input_images.to(device)
                     target_images = target_images.to(device)
                     
-                    generated_images, _, _ = model(input_images)       
-                                 
-                    loss = criterion(generated_images, target_images)
+                    generated_images, mu, logvar = model(input_images)
+                    
+                    recon_loss = 0
+                    for i in range(4):
+                        recon_loss += criterion(generated_images[:, i], target_images[:, i])
+                    recon_loss /= 4
+
+                    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+                    loss = recon_loss + kl_loss
                     val_loss += loss.item() * input_images.size(0)
             
             val_loss /= len(val_d.dataset)
