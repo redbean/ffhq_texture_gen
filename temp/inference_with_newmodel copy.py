@@ -40,7 +40,7 @@ print("initializing")
 
 print("input preprocessing")
 fullpath = os.path.join(os.getcwd(), '054')
-file = sorted(os.listdir(fullpath))[1]
+file = sorted(os.listdir(fullpath))[83]
 file_path = os.path.join(fullpath, file)
 print(file_path)
 

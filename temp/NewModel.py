@@ -16,10 +16,3 @@ class NewModel(nn.Module):
         output_images = self.decoder.decode(latent, timesteps)
         return output_images
         
-if __name__ == "__main__":
-    model = NewModel()
-    input_tensor = torch.randn(1, 3, 512, 512)  # 가상의 이미지 데이터
-    timesteps = torch.linspace(1, 0, 4).to('cuda')  # 4개의 타임스텝 생성
-
-    output = model(input_tensor, timesteps)
-    print("done")
