@@ -21,6 +21,7 @@ from datagenerator import CombinedDataset
 curr_path = os.getcwd()
 fullpath = os.path.join(curr_path, "checkpoints")
 all_chkts = sorted(os.listdir(fullpath), reverse=True)
+print(all_chkts)
 ch_full_path = os.path.join(fullpath, all_chkts[0])
 
 vae = VAEStyleModel(img_size=512)  # 모델을 GPU로 이동
@@ -39,13 +40,14 @@ print("--------------")
 print("initializing")
 
 print("input preprocessing")
-fullpath = os.path.join(os.getcwd(), '054')
-file = sorted(os.listdir(fullpath))[83]
-file_path = os.path.join(fullpath, file)
-print(file_path)
+fullpath = os.path.join(os.getcwd(), '054000.png')
+#fullpath = os.path.join(os.getcwd(), '054')
+#file = sorted(os.listdir(fullpath))[83]
+#file_path = os.path.join(fullpath, file)
+print(fullpath)
 
 
-image = cv2.imread(file_path, cv2.IMREAD_COLOR)
+image = cv2.imread(fullpath, cv2.IMREAD_COLOR)
 if image is None:
     print("not exists")
     
