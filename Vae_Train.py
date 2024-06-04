@@ -13,10 +13,16 @@ from torchvision import transforms
 from sklearn.manifold import TSNE
 
 from tqdm import tqdm
-
+import wandb  # W&B 라이브러리 추가
 
 from datagenerator import CombinedDataset
 from Vae_Model import VAEStyleModel
+from util.latent_field_visualizer import visualize_latent_space
+
+wandb.init(project="1texture2pbrtexture",
+           config={ 
+                   "learning_rate": 1e-4,
+                   })
 
 # 데이터 전처리 함수 정의
 def preprocess_data(data):
@@ -29,7 +35,7 @@ def preprocess_data(data):
 def data_loader(in_dir:str, tar_dir:str):
     combined_dataset = CombinedDataset(input_dir=in_dir, target_dir=tar_dir, transform=preprocess_data)
     # 데이터셋 인덱스 생성 (일부 데이터만 사용)
-    num_samples = 2000  # 사용할 데이터 샘플 수
+    num_samples = 20  # 사용할 데이터 샘플 수
     indices = list(range(min(num_samples, len(combined_dataset))))
 
     # 학습, 검증, 테스트 인덱스 생성
@@ -47,14 +53,14 @@ def data_loader(in_dir:str, tar_dir:str):
 
 def init_train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    epochs = 1000
+    epochs = 100
     learning_rate = 1e-4
-    writer = SummaryWriter('runs')
     vae = VAEStyleModel(img_size=512).to(device)  # 모델을 GPU로 이동
     optimizer = torch.optim.Adam(vae.parameters(), lr=learning_rate)
-    criterion = nn.MSELoss()
+    criterion = nn.L1Loss()
+    criterion2 = nn.CrossEntropyLoss()
 
-    return epochs, vae, writer, criterion, optimizer, device
+    return epochs, vae, criterion, optimizer, device, criterion2
 
 
 def vae_loss(recon_x, x, mu, logvar):
@@ -62,36 +68,30 @@ def vae_loss(recon_x, x, mu, logvar):
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     return BCE + KLD
 
-def visualize_latent_space(writer, epoch, latents, labels):
-    tsne = TSNE(n_components=2)
-    latents_2d = tsne.fit_transform(latents)
-    metadata = [str(label) for label in labels]
-    writer.add_embedding(torch.tensor(latents_2d), metadata=metadata, global_step=epoch, tag='Latent_Space')
-
 # 체크포인트 저장 디렉토리6
-checkpoint_dir = 'checkpoints'
+import datetime
+
+# 현재 날짜
+today = datetime.date.today()
+
+# yymmdd 형식으로 출력
+formatted_date = today.strftime("%y%m%d")
+checkpoint_dir = f'checkpoints_{formatted_date}'
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 def train():
-    # 데이터셋 경로 설정
     input_dir = os.path.join(os.getcwd(), 'Data_preprocessed_one')
-    target_dir = os.path.join(os.getcwd(), 'data_prep_4chan')
+    target_dir = os.path.join(os.getcwd(), 'data_prep_9wh')
     
     train_d, val_d, test_d = data_loader(in_dir=input_dir, tar_dir=target_dir)
-    #return epochs, model, writer, criterion, optimizer
+    epochs, model, criterion, optimizer, device, criterion2 = init_train()
 
-    epochs, model, writer, criterion, optimizer, device = init_train()
+    # W&B 설정
+    wandb.watch(model, criterion, log="all", log_freq=10)
         
-    for epoch in range(0, epochs):
+    for epoch in range(epochs):
         model.train()
         train_loss = 0.0
-        print("----------")
-        print(f"current epoch is {epoch}")
-        print("----------")
-        
-        
-        all_latents = []
-        all_labels = []
         
         for data in tqdm(train_d):
             optimizer.zero_grad()
@@ -103,10 +103,7 @@ def train():
             generated_images, mu, logvar = model(input_images)
             
             # 각 텍스처 맵별 손실 계산
-            recon_loss = 0
-            for i in range(4):
-                recon_loss += criterion(generated_images[:, i], target_images[:, i])
-            recon_loss /= 4
+            recon_loss = criterion(generated_images, target_images)
 
             # KL 다이버전스 손실 계산
             kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
@@ -117,21 +114,15 @@ def train():
             train_loss += loss.item() * input_images.size(0)
             loss.backward()
             optimizer.step()
-            
-            # 잠재 벡터 저장
-            all_latents.append(mu.cpu().detach().numpy())
-            all_labels.append(np.argmax(target_images.cpu().detach().numpy(), axis=1))  # 예시: 원핫 인코딩된 레이블을 인덱스로 변환
-
-        # 잠재 공간 시각화
-        all_latents = np.concatenate(all_latents, axis=0)
-        all_labels = np.concatenate(all_labels, axis=0)
-        visualize_latent_space(writer, epoch, all_latents, all_labels)
-            
+        
         train_loss /= len(train_d.dataset)
         print(f"Epoch [{epoch+1}/{epochs}], Train Loss: {train_loss:.4f}")
-        # TensorBoard에 학습 손실 기록
-        writer.add_scalar('Train Loss', train_loss, epoch)
+
+        # W&B에 학습 손실 기록
+        wandb.log({"epoch": epoch + 1, "Train Loss": train_loss, "KLDivergance Loss" : kl_loss, "recon loss": recon_loss})
         
+        # 잠재 공간 시각화
+        #visualize_latent_space(model, train_d, device, epoch + 1, perplexity=min(5, len(train_d.dataset) - 1))
         # 검증 루프
         if val_d is not None:
             model.eval()
@@ -144,20 +135,18 @@ def train():
                     
                     generated_images, mu, logvar = model(input_images)
                     
-                    recon_loss = 0
-                    for i in range(4):
-                        recon_loss += criterion(generated_images[:, i], target_images[:, i])
-                    recon_loss /= 4
-
+                    recon_loss = criterion(generated_images, target_images)
                     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
                     loss = recon_loss + kl_loss
                     val_loss += loss.item() * input_images.size(0)
             
             val_loss /= len(val_d.dataset)
-            writer.add_scalar('Val Loss', val_loss, epoch)
+            print(f"Epoch [{epoch+1}/{epochs}], Val Loss: {val_loss:.4f}")
+
+            # W&B에 검증 손실 기록
+            wandb.log({"epoch": epoch + 1, "Val Loss": val_loss})
         
         if epoch % 10 == 0:
-            # 체크포인트 저장
             checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch}.pth')
             torch.save({
                         'epoch': epoch,
@@ -165,10 +154,6 @@ def train():
                         'optimizer_state_dict': optimizer.state_dict(),
                         'loss': loss
                         }, checkpoint_path)
-
-    # TensorBoard 작성기 종료
-    writer.close()
-
 
 if __name__ == "__main__":
     train()
