@@ -1,6 +1,7 @@
 [dD]ata_*/
 [cC]heckpoints/
 __pycache__/
+wandb/
 
 [rR]uns/
 054/
