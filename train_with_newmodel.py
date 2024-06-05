@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from ResNetSD import ResNetSD
 from datagenerator import CombinedDataset
+from NewModel import NewModel
 
 
 # 데이터 전처리 함수 정의
@@ -40,9 +41,9 @@ def data_loader(in_dir:str, tar_dir:str):
     batch_size = 8
 
     # 데이터 로더 생성
-    train_loader = DataLoader(Subset(combined_dataset, train_indices), batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(Subset(combined_dataset, val_indices), batch_size=batch_size, shuffle=False,    num_workers=4, pin_memory=True)
-    test_loader = DataLoader(Subset(combined_dataset, test_indices), batch_size=batch_size, shuffle=False,  num_workers=4, pin_memory=True)
+    train_loader = DataLoader(Subset(combined_dataset, train_indices), batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+    val_loader = DataLoader(Subset(combined_dataset, val_indices), batch_size=batch_size, shuffle=False,    num_workers=0, pin_memory=True)
+    test_loader = DataLoader(Subset(combined_dataset, test_indices), batch_size=batch_size, shuffle=False,  num_workers=0, pin_memory=True)
     return train_loader, val_loader, test_loader
 
 
@@ -52,20 +53,20 @@ def print_memory_usage(description):
 
 def init_train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    epochs = 100
+    epochs = 11
     learning_rate = 1e-4
     # GPU 사용 가능 여부 확인 및 device 설정
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     # TensorBoard 작성기 초기화
     writer = SummaryWriter()
-    model = ResNetSD(latent_dim=256, num_layers=2).to('cuda')
+    model = NewModel(latent_dim=256, num_layers=2).to('cuda')
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     return epochs, model, writer, criterion, optimizer, device
 
 
-# 체크포인트 저장 디렉토리
+# 체크포인트 저장 디렉토리6
 checkpoint_dir = 'checkpoints'
 os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -92,15 +93,18 @@ def train():
             input_images = input_images.to(device)
             target_images = target_images.to(device)       # 타겟 이미지 (6개 이미지 모두)
             
-            timesteps = torch.linspace(1, 0, 4).to(device)  # 4개의 타임스텝 생성
-            
-            generated_images = model(input_images, timesteps)
-                        
-            loss = criterion(generated_images, target_images)
-            train_loss += loss.item() * input_images.size(0)
-            
-            loss.backward()
+            generated_images, mu, logvar = model(input_images)
+                                    
+            # 각 텍스처 맵별 손실 계산
+            loss = 0
+            for i in range(4):  # 4개의 텍스처 맵
+                loss += criterion(generated_images[:, i], target_images[:, i])
 
+            # 평균 손실 사용
+            loss /= 4
+
+            train_loss += loss.item() * input_images.size(0)
+            loss.backward()
             optimizer.step()
             
         train_loss /= len(train_d.dataset)
@@ -118,9 +122,8 @@ def train():
                     input_images = input_images.to(device)
                     target_images = target_images.to(device)
                     
-                    timesteps = torch.linspace(1, 0, 4).to(device)
-                    generated_images = model(input_images, timesteps)
-                    
+                    generated_images, _, _ = model(input_images)       
+                                 
                     loss = criterion(generated_images, target_images)
                     val_loss += loss.item() * input_images.size(0)
             

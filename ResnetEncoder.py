@@ -25,3 +25,13 @@ class ResnetEncoder(nn.Module):
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc(x))
         return x
+    
+    
+if __name__=="__main__":
+    
+    # 사용 예시
+    # 모델 초기화 및 입력 데이터 준비
+    model = ResnetEncoder()
+    input_tensor = torch.randn(1, 3, 512, 512)  # 가상의 이미지 데이터
+    output = model(input_tensor)
+    print("done")

@@ -107,35 +107,105 @@ class UNetBlock(nn.Module):
 class MyDecoder(nn.Module):
     def __init__(self, input_dim=256):
         super(MyDecoder, self).__init__()
-        self.fc = nn.Linear(input_dim, 512 * 4 * 4)  # 초기 차원을 4x4 이미지로 변환
+        self.fc = nn.Linear(input_dim, 512 * 4 * 4)  # Fully connected layer to expand dimensions
 
-        self.up_layers = nn.Sequential(
-            UNetBlock(512, 256),
-            UNetBlock(256, 128),
-            UNetBlock(128, 64),
-            UNetBlock(64, 32),
-            UNetBlock(32, 16)
-        )
-        self.final_up = nn.Sequential(
-            nn.ConvTranspose2d(16, 16, 4, 2, 1),  # 업스케일링
-            nn.ReLU(),
-            nn.ConvTranspose2d(16, 3, 4, 2, 1),   # 최종 채널을 3으로 조정
+        # Separate upsampling layers for each texture type
+        self.diffuse_up_layers = self._create_up_layers()
+        self.light_normalized_up_layers = self._create_up_layers()
+        self.normal_up_layers = self._create_up_layers()
+        self.specular_up_layer = self._create_gray_up_layer()
+        self.ao_up_layer = self._create_gray_up_layer()
+        self.translucency_up_layer = self._create_gray_up_layer()
+    
+
+        # # Separate upsampling layers for each texture type
+        # self.rgb_up_layers = nn.Sequential(
+        #     UNetBlock(512, 512, up=True),
+        #     UNetBlock(512, 512, up=True),
+        #     UNetBlock(512, 256, up=True),
+        #     UNetBlock(256, 128, up=True),
+        #     UNetBlock(128, 64, up=True),
+        #     UNetBlock(64, 32, up=True),
+        #     nn.ConvTranspose2d(32, 12, 4, 2, 1),  # Output 3 channels for RGB
+        #     nn.Tanh()
+        # )
+        # self.gray_up_layer = nn.Sequential(
+        #     UNetBlock(512, 512, up=True),
+        #     UNetBlock(512, 512, up=True),
+        #     UNetBlock(512, 256, up=True),
+        #     UNetBlock(256, 128, up=True),
+        #     UNetBlock(128, 64, up=True),
+        #     UNetBlock(64, 32, up=True),
+        #     nn.ConvTranspose2d(32, 12, 4, 2, 1),  # Output 1 channel for grayscale
+        #     nn.Tanh()
+        # )
+        
+    
+    def _create_up_layers(self):
+        return nn.Sequential(
+            UNetBlock(512, 512, up=True),
+            UNetBlock(512, 512, up=True),
+            UNetBlock(512, 256, up=True),
+            UNetBlock(256, 128, up=True),
+            UNetBlock(128, 64, up=True),
+            UNetBlock(64, 32, up=True),
+            nn.ConvTranspose2d(32, 3, 4, 2, 1),  # Output 3 channels for RGB
             nn.Tanh()
         )
 
+    def _create_gray_up_layer(self):
+        return nn.Sequential(
+            UNetBlock(512, 512, up=True),
+            UNetBlock(512, 512, up=True),
+            UNetBlock(512, 256, up=True),
+            UNetBlock(256, 128, up=True),
+            UNetBlock(128, 64, up=True),
+            UNetBlock(64, 32, up=True),
+            nn.ConvTranspose2d(32, 1, 4, 2, 1),  # Output 1 channel for grayscale
+            nn.Tanh()
+        )
+
+
     def forward(self, x):
         x = self.fc(x)
-        x = x.view(-1, 512, 4, 4)
-        x = self.up_layers(x)
-        x = self.final_up(x)
-        return x
+        x = x.view(-1, 512, 4, 4)  # Reshape to a spatial size for convolution
+
+        # RGB textures
+        diffuse = self.diffuse_up_layers(x)
+        light_normalized = self.light_normalized_up_layers(x)
+        normal = self.normal_up_layers(x)
+
+        # Grayscale textures
+        specular = self.specular_up_layer(x)
+        ao = self.ao_up_layer(x)
+        translucency = self.translucency_up_layer(x)
+
+        return diffuse, light_normalized, normal, specular, ao, translucency
+        # # RGB textures
+        # diffuse = self.rgb_up_layers(x)
+        # light_normalized = self.rgb_up_layers(x)
+        # normal = self.rgb_up_layers(x)
+
+        # # Grayscale textures, merged into one RGB image
+        # specular = self.gray_up_layer(x)
+        # ao = self.gray_up_layer(x)
+        # translucency = self.gray_up_layer(x)
+        # merged_gray_image = torch.cat((specular, ao, translucency), dim=1)  # Merge grayscale images into one RGB image
+
+        #return diffuse, light_normalized, normal, merged_gray_image
 
     def decode(self, x, timesteps):
         batch_size = x.shape[0]
-        img = torch.zeros((batch_size, timesteps.size(0), 3, 512, 512), device=x.device)
-        
-        for i, t in enumerate(timesteps):
-            noise = torch.randn_like(x)  
-            z = x + t * noise 
-            img[:, i] = self.forward(z)
-        return img
+        output_images = torch.zeros((batch_size, 4, 3, 512, 512), device=x.device)
+
+        diffuse, light_normalized, normal, specular, ao, translucency = self.forward(x)
+
+        output_images[:, 0, :, :, :] = diffuse
+        output_images[:, 1, :, :, :] = light_normalized
+        output_images[:, 2, :, :, :] = normal
+
+        # Merge grayscale textures into one RGB image
+        merged_gray_image = torch.cat((specular, ao, translucency), dim=1)
+        output_images[:, 3, :, :, :] = merged_gray_image
+        return output_images
+    
