@@ -13,7 +13,18 @@
 
 ### 데이터 shape
  * input = 3, w, h
- * target = 4, 3, w, h (디퓨즈, 라이트 노말라이제이션, 노말의 RGB 파일과 AO, SPEC, 투명도 그레이 스케일을 rgb 각 채널에 분배하여 총 4장의 이미지로 만듬)
+ * target = 12, w, h 디퓨즈, LN, Normal, AO, SPEC, TRANSLUCENCY, 의 모든 채널을 1개의 쉐입으로 정리 
+|제목|InChan-순서|설명|
+|---------------------|---|---|
+|diffuse              |0-2|RGB|
+|light_normalized     |3-5|RGB|
+|normal               |6-8|RGB|
+|Specular             |9  |R  |
+|Ambient Occlusion    |10 | G |
+|Translucency         |11 |  B|
+
+
+* 0605 update -->old(디퓨즈, 라이트 노말라이제이션, 노말의 RGB 파일과 AO, SPEC, 투명도 그레이 스케일을 rgb 각 채널에 분배하여 총 4장의 이미지로 만듬)
 
 |제목|내용|설명|
 |---------------------|-|---|
@@ -23,3 +34,4 @@
 |Specular             |3|R  |
 |Ambient Occlusion    |3| G |
 |Translucency         |3|  B|
+
